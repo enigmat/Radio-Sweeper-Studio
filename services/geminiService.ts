@@ -76,7 +76,12 @@ function createWavBlob(pcmData: Uint8Array, sampleRate: number, numChannels: num
     return new Blob([view.buffer, pcmData], { type: 'audio/wav' });
 }
 
-async function generateSingleTake(script: string, voice: Voice, deliveryStyle: string, ai: GoogleGenAI, dj: DJ): Promise<Blob> {
+export async function generateSingleTake(script: string, voice: Voice, deliveryStyle: string, dj: DJ): Promise<Blob> {
+     if (!process.env.API_KEY) {
+        throw new Error("API_KEY environment variable not set.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
     return new Promise((resolve, reject) => {
         const audioChunks: Uint8Array[] = [];
         
@@ -84,7 +89,7 @@ async function generateSingleTake(script: string, voice: Voice, deliveryStyle: s
         const systemInstruction = `You are a professional radio announcer${djPersonaInstruction}. Read the provided script with a ${deliveryStyle || 'standard'} style, suitable for a radio sweeper.`;
 
         const sessionPromise = ai.live.connect({
-            model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+            model: 'gem-2.5-flash-native-audio-preview-09-2025',
             callbacks: {
                 onopen: () => {
                     sessionPromise.then((session) => {
@@ -139,15 +144,10 @@ async function generateSingleTake(script: string, voice: Voice, deliveryStyle: s
 
 
 export async function generateSweeper(script: string, voice: Voice, deliveryStyle: string, numberOfTakes: number, dj: DJ): Promise<Blob[]> {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
     const generationPromises: Promise<Blob>[] = [];
 
     for (let i = 0; i < numberOfTakes; i++) {
-        generationPromises.push(generateSingleTake(script, voice, deliveryStyle, ai, dj));
+        generationPromises.push(generateSingleTake(script, voice, deliveryStyle, dj));
     }
 
     return Promise.all(generationPromises);
