@@ -1,0 +1,7 @@
+{
+  "name": "Radio Sweeper Studio",
+  "description": "An AI-powered application to generate professional radio sweepers. Type your script, choose a voice, and let Gemini create a high-quality audio clip for your station.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
