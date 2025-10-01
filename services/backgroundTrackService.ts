@@ -1,15 +1,12 @@
 import { BackgroundTrackPreset } from "../types";
 
 // Base64 encoded WAV files for presets
-// NOTE: The original base64 strings were corrupted and have been replaced with valid (but silent) placeholders.
+// NOTE: These are silent placeholders.
 const PRESET_TRACKS: Record<BackgroundTrackPreset, string> = {
     [BackgroundTrackPreset.None]: '',
-    // A simple synth whoosh effect
-    [BackgroundTrackPreset.SynthWhoosh]: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAVFYAAFRWAAABAAgAZGF0YQAAAAA=',
-    // A standard broadcast news jingle
-    [BackgroundTrackPreset.NewsJingle]: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAVFYAAFRWAAABAAgAZGF0YQAAAAA=',
-    // A simple rock guitar riff
-    [BackgroundTrackPreset.RockRiff]: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAVFYAAFRWAAABAAgAZGF0YQAAAAA=',
+    [BackgroundTrackPreset.AmbientPad]: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAVFYAAFRWAAABAAgAZGF0YQAAAAA=',
+    [BackgroundTrackPreset.EnergeticBeat]: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAVFYAAFRWAAABAAgAZGF0YQAAAAA=',
+    [BackgroundTrackPreset.ChillLoFi]: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAVFYAAFRWAAABAAgAZGF0YQAAAAA=',
 };
 
 const blobCache: Partial<Record<BackgroundTrackPreset, Blob>> = {};

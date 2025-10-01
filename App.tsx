@@ -1,47 +1,18 @@
 
-
 import React, { useState, useEffect, useCallback } from 'react';
-import { generateSweeper, generateScriptSuggestion, generateSingleTake } from './services/geminiService';
+import { generateSweeper, generateScriptSuggestion, generateVisualizerVideo } from './services/geminiService';
 import { applyEffect, mixAudio } from './services/audioEffectsService';
 import { getTrackBlob } from './services/backgroundTrackService';
 import { getSfxBlob } from './services/sfxService';
-import { EffectPreset, BackgroundTrackPreset, DJ, SfxPreset, AppliedSfx, VOCAL_PROFILES, VocalDrop, AppliedVocalDrop } from './types';
+import { GenerationResult, TakeResult, EffectPreset, Voice, BackgroundTrackPreset, DJ, SfxPreset, AppliedSfx } from './types';
 import { Spinner } from './components/Spinner';
-import { AddIcon, DownloadIcon, MusicNoteIcon, RemoveIcon, SoundWaveIcon, SparklesIcon, UploadIcon, SfxIcon, MicrophoneIcon } from './components/Icons';
-import AudioVisualizer from './components/AudioVisualizer';
-
-interface TakeResult {
-    // Source
-    originalBlob: Blob;
-    originalUrl: string;
-
-    // After vocal effect
-    processedBlob: Blob;
-    processedUrl: string;
-    
-    // Final mixed output
-    finalBlob: Blob;
-    finalUrl: string;
-
-    // UI State
-    isProcessing: boolean;
-    selectedEffect: EffectPreset;
-    selectedTrack: BackgroundTrackPreset | 'custom';
-    customTrackFile: File | null;
-    mixVolume: number; // 0 to 1
-    appliedSfx: AppliedSfx[];
-    appliedVocalDrops: AppliedVocalDrop[];
-}
-
-interface GenerationResult {
-    script: string;
-    takes: TakeResult[];
-}
+import { AddIcon, DownloadIcon, MusicNoteIcon, RemoveIcon, SoundWaveIcon, SparklesIcon, UploadIcon, SfxIcon, VideoIcon } from './components/Icons';
 
 const App: React.FC = () => {
   const [scripts, setScripts] = useState<string[]>(["You're tuned into the number one hit music station... Gemini FM!"]);
   const [stationStyle, setStationStyle] = useState<string>('Top 40 Hits');
-  const [selectedProfileId, setSelectedProfileId] = useState<string>(VOCAL_PROFILES[0].id);
+  const [deliveryStyle, setDeliveryStyle] = useState<string>('Energetic and clear');
+  const [selectedVoice, setSelectedVoice] = useState<Voice>(Voice.Zephyr);
   const [selectedDJ, setSelectedDJ] = useState<DJ>(DJ.None);
   const [numberOfTakes, setNumberOfTakes] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -50,10 +21,6 @@ const App: React.FC = () => {
   const [generationResults, setGenerationResults] = useState<GenerationResult[]>([]);
   const [generationProgress, setGenerationProgress] = useState<string | null>(null);
   const [apiKeyMissing, setApiKeyMissing] = useState<boolean>(false);
-  const [vocalDrops, setVocalDrops] = useState<VocalDrop[]>([]);
-  const [newDropScript, setNewDropScript] = useState<string>('Gemini FM!');
-  const [newDropProfileId, setNewDropProfileId] = useState<string>(VOCAL_PROFILES[2].id);
-
 
   useEffect(() => {
     if (!process.env.API_KEY) {
@@ -68,13 +35,13 @@ const App: React.FC = () => {
             if (take.processedUrl !== take.finalUrl) {
                 URL.revokeObjectURL(take.finalUrl);
             }
+            if (take.videoUrl) {
+                URL.revokeObjectURL(take.videoUrl);
+            }
         });
       });
-      vocalDrops.forEach(drop => {
-        if(drop.url) URL.revokeObjectURL(drop.url);
-      });
     };
-  }, [generationResults, vocalDrops]);
+  }, [generationResults]);
   
   const processAudioForTake = useCallback(async (take: TakeResult): Promise<Partial<TakeResult>> => {
       try {
@@ -100,20 +67,8 @@ const App: React.FC = () => {
                 })
         );
         
-        // Step 4: Prepare Vocal Drops for mixing
-        const vocalDropsToApply = take.appliedVocalDrops
-            .map(appliedDrop => {
-                const drop = vocalDrops.find(d => d.id === appliedDrop.dropId);
-                if (drop && drop.blob) {
-                    return { blob: drop.blob, volume: appliedDrop.volume, timing: appliedDrop.timing };
-                }
-                return null;
-            })
-            .filter((d): d is { blob: Blob; volume: number; timing: 'start' | 'middle' | 'end'; } => d !== null);
-
-
-        // Step 5: Mix everything together
-        const finalBlob = await mixAudio(processedBlob, backgroundTrack, sfxToApply, vocalDropsToApply);
+        // Step 4: Mix everything together
+        const finalBlob = await mixAudio(processedBlob, backgroundTrack, sfxToApply);
         
         return { processedBlob, finalBlob };
 
@@ -122,9 +77,9 @@ const App: React.FC = () => {
           setError("Failed to apply audio changes.");
           return {};
       }
-  }, [vocalDrops]);
+  }, []);
 
-  const updateTakeState = useCallback(async (resultIndex: number, takeIndex: number, newTakeSettings: Partial<Omit<TakeResult, 'appliedSfx' | 'appliedVocalDrops'>> & { appliedSfx?: AppliedSfx[], appliedVocalDrops?: AppliedVocalDrop[] }) => {
+  const updateTakeState = useCallback(async (resultIndex: number, takeIndex: number, newTakeSettings: Partial<TakeResult>) => {
     const newResults = [...generationResults];
     const take = newResults[resultIndex].takes[takeIndex];
 
@@ -186,58 +141,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerateDrop = useCallback(async () => {
-    const script = newDropScript.trim();
-    if (!script) {
-        setError("Vocal drop script cannot be empty.");
-        return;
-    }
-    const profile = VOCAL_PROFILES.find(p => p.id === newDropProfileId);
-    if (!profile) {
-        setError("Invalid vocal profile selected for drop.");
-        return;
-    }
-
-    const dropId = crypto.randomUUID();
-    const newDrop: VocalDrop = {
-        id: dropId,
-        script,
-        vocalProfileId: newDropProfileId,
-        blob: null,
-        url: null,
-        isGenerating: true,
-    };
-    setVocalDrops(prev => [newDrop, ...prev]);
-
-    try {
-        const blob = await generateSingleTake(script, profile.voice, profile.deliveryStyle, DJ.None);
-        const url = URL.createObjectURL(blob);
-        setVocalDrops(prev => prev.map(d => d.id === dropId ? { ...d, blob, url, isGenerating: false } : d));
-    } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to generate vocal drop.");
-        setVocalDrops(prev => prev.filter(d => d.id !== dropId));
-    }
-  }, [newDropScript, newDropProfileId]);
-
-  const removeDrop = (id: string) => {
-    const dropToRemove = vocalDrops.find(d => d.id === id);
-    if (dropToRemove?.url) {
-        URL.revokeObjectURL(dropToRemove.url);
-    }
-    setVocalDrops(prev => prev.filter(d => d.id !== id));
-  }
-
   const handleGenerateClick = useCallback(async () => {
     const validScripts = scripts.filter(s => s.trim() !== '');
     if (validScripts.length === 0) {
       setError("Please enter at least one script.");
       return;
-    }
-    
-    const selectedProfile = VOCAL_PROFILES.find(p => p.id === selectedProfileId);
-    if (!selectedProfile) {
-        setError("Please select a valid vocal profile.");
-        return;
     }
 
     setIsLoading(true);
@@ -247,6 +155,7 @@ const App: React.FC = () => {
          URL.revokeObjectURL(take.originalUrl);
          URL.revokeObjectURL(take.processedUrl);
          if(take.processedUrl !== take.finalUrl) URL.revokeObjectURL(take.finalUrl);
+         if(take.videoUrl) URL.revokeObjectURL(take.videoUrl);
        }));
       setGenerationResults([]);
     }
@@ -256,7 +165,7 @@ const App: React.FC = () => {
       for (let i = 0; i < validScripts.length; i++) {
         const script = validScripts[i];
         setGenerationProgress(`Generating ${i + 1} of ${validScripts.length}: "${script.substring(0, 20)}..."`);
-        const audioBlobs = await generateSweeper(script, selectedProfile.voice, selectedProfile.deliveryStyle, numberOfTakes, selectedDJ);
+        const audioBlobs = await generateSweeper(script, selectedVoice, deliveryStyle, numberOfTakes, selectedDJ);
         
         const takes: TakeResult[] = audioBlobs.map(blob => {
           const url = URL.createObjectURL(blob);
@@ -273,7 +182,6 @@ const App: React.FC = () => {
             customTrackFile: null,
             mixVolume: 0.5,
             appliedSfx: [],
-            appliedVocalDrops: [],
           };
         });
 
@@ -287,9 +195,40 @@ const App: React.FC = () => {
       setIsLoading(false);
       setGenerationProgress(null);
     }
-  }, [scripts, selectedProfileId, numberOfTakes, generationResults, selectedDJ]);
+  }, [scripts, selectedVoice, deliveryStyle, numberOfTakes, generationResults, selectedDJ]);
+  
+  const handleGenerateVideo = useCallback(async (resultIndex: number, takeIndex: number) => {
+    const newResults = [...generationResults];
+    const result = newResults[resultIndex];
+    const take = result.takes[takeIndex];
 
-  const anyLoading = isLoading || isGeneratingScript || vocalDrops.some(d => d.isGenerating);
+    take.isGeneratingVideo = true;
+    take.videoUrl = undefined;
+    take.videoError = undefined;
+    setGenerationResults(newResults);
+
+    try {
+        const videoUrl = await generateVisualizerVideo(result.script);
+        setGenerationResults(prevResults => {
+            const finalResults = [...prevResults];
+            const finalTake = finalResults[resultIndex].takes[takeIndex];
+            finalTake.videoUrl = videoUrl;
+            finalTake.isGeneratingVideo = false;
+            return finalResults;
+        });
+    } catch (err) {
+        console.error("Video generation failed:", err);
+        setGenerationResults(prevResults => {
+            const finalResults = [...prevResults];
+            const finalTake = finalResults[resultIndex].takes[takeIndex];
+            finalTake.videoError = err instanceof Error ? err.message : "An unknown error occurred.";
+            finalTake.isGeneratingVideo = false;
+            return finalResults;
+        });
+    }
+  }, [generationResults]);
+
+  const anyLoading = isLoading || isGeneratingScript;
   const totalGenerations = scripts.filter(s => s.trim() !== '').length * numberOfTakes;
 
   return (
@@ -342,7 +281,7 @@ const App: React.FC = () => {
                     {scripts.map((script, index) => (
                         <div key={index} className="flex items-start space-x-2">
                             <textarea
-                              rows={2}
+                              rows={3}
                               className="flex-grow bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 text-gray-200 p-3 transition duration-200"
                               placeholder={`Script ${index + 1}...`}
                               value={script}
@@ -369,50 +308,6 @@ const App: React.FC = () => {
                     <span className="ml-2">Add Script</span>
                 </button>
               </div>
-
-              {/* Vocal Drops Library */}
-              <div className="space-y-4 p-4 bg-gray-900/30 rounded-lg border border-gray-700/50">
-                  <h3 className="text-sm font-medium text-cyan-400 flex items-center"><MicrophoneIcon className="mr-2 h-5 w-5"/> Vocal Drops Library</h3>
-                  <div className="space-y-2">
-                    <input
-                        type="text"
-                        placeholder="Drop script (e.g., DJ Name)"
-                        value={newDropScript}
-                        onChange={(e) => setNewDropScript(e.target.value)}
-                        className="w-full bg-gray-900/70 border border-gray-600 rounded-md p-2 text-sm"
-                        disabled={anyLoading || apiKeyMissing}
-                    />
-                    <div className="flex gap-2">
-                        <select
-                            value={newDropProfileId}
-                            onChange={(e) => setNewDropProfileId(e.target.value)}
-                            className="flex-grow bg-gray-900/70 border border-gray-600 rounded-md p-2 text-sm"
-                            disabled={anyLoading || apiKeyMissing}
-                        >
-                            {VOCAL_PROFILES.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
-                        <button onClick={handleGenerateDrop} disabled={anyLoading || apiKeyMissing || !newDropScript.trim()} className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-md text-sm font-semibold disabled:opacity-50 flex items-center justify-center">
-                            <AddIcon/> <span className="ml-1">Generate Drop</span>
-                        </button>
-                    </div>
-                  </div>
-                  <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                    {vocalDrops.map(drop => (
-                        <div key={drop.id} className="flex items-center justify-between p-2 bg-gray-800/50 rounded-md">
-                            <span className="text-sm italic flex-shrink-0 mr-2">"{drop.script}"</span>
-                            <div className="flex items-center space-x-2">
-                               {drop.isGenerating && <Spinner size="h-4 w-4"/>}
-                               {drop.url && <audio src={drop.url} controls className="h-8 w-48"/>}
-                               <button onClick={() => removeDrop(drop.id)} className="text-gray-500 hover:text-red-400" disabled={anyLoading}>
-                                 <RemoveIcon className="h-5 w-5"/>
-                               </button>
-                            </div>
-                        </div>
-                    ))}
-                  </div>
-              </div>
-
-
               <div className="grid grid-cols-2 gap-4">
                  <div>
                   <label htmlFor="djPersona" className="block text-sm font-medium text-cyan-400 mb-2">DJ Persona</label>
@@ -429,16 +324,16 @@ const App: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="vocalProfile" className="block text-sm font-medium text-cyan-400 mb-2">Vocal Profile</label>
+                  <label htmlFor="voice" className="block text-sm font-medium text-cyan-400 mb-2">Voice Model</label>
                   <select
-                    id="vocalProfile"
+                    id="voice"
                     className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 text-gray-200 p-3 transition duration-200"
-                    value={selectedProfileId}
-                    onChange={(e) => setSelectedProfileId(e.target.value)}
+                    value={selectedVoice}
+                    onChange={(e) => setSelectedVoice(e.target.value as Voice)}
                     disabled={anyLoading || apiKeyMissing}
                   >
-                    {VOCAL_PROFILES.map((profile) => (
-                      <option key={profile.id} value={profile.id}>{profile.name}</option>
+                    {Object.values(Voice).map((v) => (
+                      <option key={v} value={v}>{v}</option>
                     ))}
                   </select>
                 </div>
@@ -456,6 +351,18 @@ const App: React.FC = () => {
                     <option value={3}>3</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label htmlFor="deliveryStyle" className="block text-sm font-medium text-cyan-400 mb-2">Delivery Style</label>
+                <input
+                  type="text"
+                  id="deliveryStyle"
+                  className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 text-gray-200 p-3 transition duration-200"
+                  placeholder="e.g., Hype, Calm, Mysterious"
+                  value={deliveryStyle}
+                  onChange={(e) => setDeliveryStyle(e.target.value)}
+                  disabled={anyLoading || apiKeyMissing}
+                />
               </div>
               <button
                 onClick={handleGenerateClick}
@@ -493,10 +400,10 @@ const App: React.FC = () => {
                           <div key={take.originalUrl} className="p-3 bg-gray-900/50 rounded-md border border-gray-700/70 relative">
                              {take.isProcessing && <div className="absolute inset-0 bg-gray-900/70 flex items-center justify-center z-10 rounded-md"><Spinner /></div>}
                             <p className="text-xs font-medium text-gray-400 mb-2">Take {takeIndex + 1}</p>
-                            <div className="mb-3">
-                                <AudioVisualizer src={take.finalUrl} />
-                            </div>
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <audio controls src={take.finalUrl} className="w-full mb-3">
+                                Your browser does not support the audio element.
+                            </audio>
+                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 <div className="space-y-3 p-3 bg-gray-900/40 rounded-md border border-gray-700/50">
                                      <label className="block text-xs font-medium text-cyan-400">Vocal Effect</label>
                                      <div className="flex items-center space-x-2">
@@ -639,84 +546,6 @@ const App: React.FC = () => {
                                       ))}
                                     </div>
                                 </div>
-                                 <div className="space-y-3 p-3 bg-gray-900/40 rounded-md border border-gray-700/50">
-                                    <div className="flex justify-between items-center">
-                                      <label className="block text-xs font-medium text-blue-400">Vocal Drops</label>
-                                      <button 
-                                        onClick={() => {
-                                            const newDrop: AppliedVocalDrop = { id: crypto.randomUUID(), dropId: '', volume: 0.8, timing: 'end' };
-                                            updateTakeState(resultIndex, takeIndex, { appliedVocalDrops: [...take.appliedVocalDrops, newDrop] })
-                                        }}
-                                        disabled={take.isProcessing || vocalDrops.length === 0}
-                                        className="text-blue-400 hover:text-blue-300 disabled:opacity-50"
-                                        title="Add Vocal Drop"
-                                      >
-                                        <AddIcon />
-                                      </button>
-                                    </div>
-                                    <div className="space-y-2 max-h-24 overflow-y-auto">
-                                      {take.appliedVocalDrops.map((drop) => (
-                                        <div key={drop.id} className="p-2 bg-gray-800/50 rounded border border-gray-700 space-y-2">
-                                          <div className="flex items-center space-x-2">
-                                            <MicrophoneIcon className="text-blue-400 h-5 w-5 flex-shrink-0" />
-                                            <select
-                                                className="flex-grow bg-gray-900/70 border border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-200 p-1 text-xs"
-                                                value={drop.dropId}
-                                                disabled={take.isProcessing}
-                                                onChange={(e) => {
-                                                    const newAppliedDrops = take.appliedVocalDrops.map(item => 
-                                                        item.id === drop.id ? { ...item, dropId: e.target.value } : item
-                                                    );
-                                                    updateTakeState(resultIndex, takeIndex, { appliedVocalDrops: newAppliedDrops });
-                                                }}
-                                            >
-                                                <option value="">- Select Drop -</option>
-                                                {vocalDrops.filter(d => d.blob).map((d) => <option key={d.id} value={d.id}>{d.script}</option>)}
-                                            </select>
-                                            <button onClick={() => {
-                                                const newAppliedDrops = take.appliedVocalDrops.filter(item => item.id !== drop.id);
-                                                updateTakeState(resultIndex, takeIndex, { appliedVocalDrops: newAppliedDrops });
-                                            }}
-                                            className="text-gray-500 hover:text-red-400"
-                                            disabled={take.isProcessing}
-                                            >
-                                              <RemoveIcon className="h-5 w-5"/>
-                                            </button>
-                                          </div>
-                                           <div className="flex items-center space-x-2">
-                                                <select
-                                                    className="flex-grow bg-gray-900/70 border border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-200 p-1 text-xs"
-                                                    value={drop.timing}
-                                                    disabled={take.isProcessing}
-                                                    onChange={(e) => {
-                                                        const newAppliedDrops = take.appliedVocalDrops.map(item => 
-                                                            item.id === drop.id ? { ...item, timing: e.target.value as 'start' | 'middle' | 'end' } : item
-                                                        );
-                                                        updateTakeState(resultIndex, takeIndex, { appliedVocalDrops: newAppliedDrops });
-                                                    }}
-                                                >
-                                                    <option value="start">Start</option>
-                                                    <option value="middle">Middle</option>
-                                                    <option value="end">End</option>
-                                                </select>
-                                                <input
-                                                    type="range"
-                                                    min="0" max="1" step="0.05"
-                                                    value={drop.volume}
-                                                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                                    disabled={take.isProcessing || !drop.dropId}
-                                                    onChange={(e) => {
-                                                        const newAppliedDrops = take.appliedVocalDrops.map(item => 
-                                                            item.id === drop.id ? { ...item, volume: Number(e.target.value) } : item
-                                                        );
-                                                        updateTakeState(resultIndex, takeIndex, { appliedVocalDrops: newAppliedDrops });
-                                                    }}
-                                                />
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                </div>
                              </div>
                              <a
                                 href={take.finalUrl}
@@ -726,6 +555,55 @@ const App: React.FC = () => {
                                 <DownloadIcon />
                                 <span className="ml-2">Download Final Mix</span>
                             </a>
+
+                            <div className="mt-4 pt-4 border-t border-gray-700/50">
+                              {(() => {
+                                if (take.isGeneratingVideo) {
+                                  return (
+                                    <div className="text-center text-gray-400 p-4">
+                                      <Spinner size="h-8 w-8" />
+                                      <p className="mt-4 animate-pulse">Generating video...</p>
+                                      <p className="text-sm mt-1">This can take a few minutes. Please wait.</p>
+                                    </div>
+                                  );
+                                }
+                                if (take.videoUrl) {
+                                  return (
+                                    <div className="space-y-3 animate-fade-in">
+                                      <p className="text-xs font-medium text-green-400">Video Visualizer</p>
+                                      <video controls src={take.videoUrl} className="w-full rounded-md bg-black" />
+                                      <a
+                                        href={take.videoUrl}
+                                        download={`sweeper-video-${result.script.substring(0, 10).replace(/ /g, '_')}-take-${takeIndex + 1}.mp4`}
+                                        className="w-full font-orbitron inline-flex items-center justify-center px-4 py-2 border border-green-500 text-sm font-medium rounded-md text-green-400 hover:bg-green-500 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-green-500 transition-all duration-300"
+                                      >
+                                        <DownloadIcon />
+                                        <span className="ml-2">Download Video</span>
+                                      </a>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <>
+                                    {take.videoError && (
+                                      <div className="text-center text-red-400 p-2 mb-2 bg-red-900/30 rounded-md">
+                                        <p className="font-bold">Video Generation Failed</p>
+                                        <p className="text-sm mt-1">{take.videoError}</p>
+                                      </div>
+                                    )}
+                                    <button
+                                      onClick={() => handleGenerateVideo(resultIndex, takeIndex)}
+                                      disabled={anyLoading || apiKeyMissing || take.isProcessing}
+                                      className="w-full font-orbitron inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-lg text-white bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
+                                    >
+                                      <VideoIcon />
+                                      <span className="ml-2">{take.videoError ? 'Retry Generation' : 'Generate Video Visualizer'}</span>
+                                    </button>
+                                  </>
+                                );
+                              })()}
+                            </div>
+
                           </div>
                         ))}
                         </div>

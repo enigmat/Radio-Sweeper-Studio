@@ -76,12 +76,7 @@ function createWavBlob(pcmData: Uint8Array, sampleRate: number, numChannels: num
     return new Blob([view.buffer, pcmData], { type: 'audio/wav' });
 }
 
-export async function generateSingleTake(script: string, voice: Voice, deliveryStyle: string, dj: DJ): Promise<Blob> {
-     if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
+async function generateSingleTake(script: string, voice: Voice, deliveryStyle: string, ai: GoogleGenAI, dj: DJ): Promise<Blob> {
     return new Promise((resolve, reject) => {
         const audioChunks: Uint8Array[] = [];
         
@@ -89,7 +84,7 @@ export async function generateSingleTake(script: string, voice: Voice, deliveryS
         const systemInstruction = `You are a professional radio announcer${djPersonaInstruction}. Read the provided script with a ${deliveryStyle || 'standard'} style, suitable for a radio sweeper.`;
 
         const sessionPromise = ai.live.connect({
-            model: 'gem-2.5-flash-native-audio-preview-09-2025',
+            model: 'gemini-2.5-flash-native-audio-preview-09-2025',
             callbacks: {
                 onopen: () => {
                     sessionPromise.then((session) => {
@@ -144,11 +139,65 @@ export async function generateSingleTake(script: string, voice: Voice, deliveryS
 
 
 export async function generateSweeper(script: string, voice: Voice, deliveryStyle: string, numberOfTakes: number, dj: DJ): Promise<Blob[]> {
+    if (!process.env.API_KEY) {
+        throw new Error("API_KEY environment variable not set.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const generationPromises: Promise<Blob>[] = [];
 
     for (let i = 0; i < numberOfTakes; i++) {
-        generationPromises.push(generateSingleTake(script, voice, deliveryStyle, dj));
+        generationPromises.push(generateSingleTake(script, voice, deliveryStyle, ai, dj));
     }
 
     return Promise.all(generationPromises);
+}
+
+export async function generateVisualizerVideo(script: string): Promise<string> {
+    if (!process.env.API_KEY) {
+        throw new Error("API_KEY environment variable not set.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    const prompt = `Create a short, abstract, energetic motion graphics video visualizer. The video should be visually exciting and suitable for a modern radio station's branding. It should sync with the energy of a radio sweeper that says: "${script}". Do not include any text in the video. Focus on dynamic shapes, light effects, and fast-paced transitions.`;
+
+    try {
+        let operation = await ai.models.generateVideos({
+            model: 'veo-2.0-generate-001',
+            prompt: prompt,
+            config: {
+                numberOfVideos: 1
+            }
+        });
+
+        while (!operation.done) {
+            await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+            operation = await ai.operations.getVideosOperation({ operation: operation });
+        }
+
+        if (operation.error) {
+            throw new Error(`Video generation failed: ${operation.error.message}`);
+        }
+
+        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+        if (!downloadLink) {
+            throw new Error("Video generation completed but no download link was found.");
+        }
+
+        const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to download video file: ${response.statusText}`);
+        }
+
+        const videoBlob = await response.blob();
+        return URL.createObjectURL(videoBlob);
+
+    } catch (error) {
+        console.error("Error generating visualizer video:", error);
+        if (error instanceof Error) {
+            throw new Error(`Failed to generate video: ${error.message}`);
+        }
+        throw new Error("An unknown error occurred during video generation.");
+    }
 }

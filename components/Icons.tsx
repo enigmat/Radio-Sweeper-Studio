@@ -59,8 +59,9 @@ export const UploadIcon: React.FC<{ className?: string }> = ({ className = 'h-5 
     </svg>
 );
 
-export const MicrophoneIcon: React.FC<{ className?: string }> = ({ className = 'h-6 w-6' }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 016 0v8.25a3 3 0 01-3 3z" />
+export const VideoIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 4H5a2 2 0 00-2 2v12a2 2 0 002 2h2v-3M17 4h2a2 2 0 012 2v12a2 2 0 01-2 2h-2v-3" />
     </svg>
 );

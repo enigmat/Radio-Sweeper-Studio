@@ -1,29 +1,16 @@
 
-
 export enum Voice {
   Zephyr = 'Zephyr',
   Puck = 'Puck',
   Charon = 'Charon',
   Kore = 'Kore',
   Fenrir = 'Fenrir',
+  Luna = 'Luna',
+  Nova = 'Nova',
+  Stella = 'Stella',
+  Orion = 'Orion',
+  Sol = 'Sol',
 }
-
-export interface VocalProfile {
-  id: string;
-  name: string;
-  voice: Voice;
-  deliveryStyle: string;
-}
-
-export const VOCAL_PROFILES: VocalProfile[] = [
-    { id: 'zephyr-energetic', name: 'Zephyr (Energetic)', voice: Voice.Zephyr, deliveryStyle: 'energetic, clear, and upbeat' },
-    { id: 'zephyr-warm', name: 'Zephyr (Warm Announcer)', voice: Voice.Zephyr, deliveryStyle: 'warm, friendly, and inviting' },
-    { id: 'puck-deep', name: 'Puck (Deep & Authoritative)', voice: Voice.Puck, deliveryStyle: 'deep, authoritative, and resonant' },
-    { id: 'puck-mysterious', name: 'Puck (Mysterious Narrator)', voice: Voice.Puck, deliveryStyle: 'slow, mysterious, with a deep tone' },
-    { id: 'charon-smooth', name: 'Charon (Smooth & Calm)', voice: Voice.Charon, deliveryStyle: 'smooth, calm, and relaxing' },
-    { id: 'kore-bright', name: 'Kore (Bright & Youthful)', voice: Voice.Kore, deliveryStyle: 'bright, youthful, and cheerful' },
-    { id: 'fenrir-powerful', name: 'Fenrir (Powerful & Epic)', voice: Voice.Fenrir, deliveryStyle: 'powerful, epic, and dramatic' },
-];
 
 export enum EffectPreset {
   None = 'None',
@@ -38,9 +25,9 @@ export enum EffectPreset {
 
 export enum BackgroundTrackPreset {
     None = 'None',
-    SynthWhoosh = 'Synth Whoosh',
-    NewsJingle = 'News Jingle',
-    RockRiff = 'Rock Riff',
+    AmbientPad = 'Ambient Pad',
+    EnergeticBeat = 'Energetic Beat',
+    ChillLoFi = 'Chill Lo-Fi',
 }
 
 export enum DJ {
@@ -66,18 +53,34 @@ export interface AppliedSfx {
     timing: 'start' | 'middle' | 'end';
 }
 
-export interface VocalDrop {
-    id: string;
-    script: string;
-    vocalProfileId: string;
-    blob: Blob | null;
-    url: string | null;
-    isGenerating: boolean;
+export interface TakeResult {
+    // Source
+    originalBlob: Blob;
+    originalUrl: string;
+
+    // After vocal effect
+    processedBlob: Blob;
+    processedUrl: string;
+    
+    // Final mixed output
+    finalBlob: Blob;
+    finalUrl: string;
+
+    // UI State
+    isProcessing: boolean;
+    selectedEffect: EffectPreset;
+    selectedTrack: BackgroundTrackPreset | 'custom';
+    customTrackFile: File | null;
+    mixVolume: number; // 0 to 1
+    appliedSfx: AppliedSfx[];
+
+    // Video Generation State
+    isGeneratingVideo?: boolean;
+    videoUrl?: string;
+    videoError?: string;
 }
 
-export interface AppliedVocalDrop {
-    id: string;
-    dropId: string; // references a VocalDrop's id
-    volume: number;
-    timing: 'start' | 'middle' | 'end';
+export interface GenerationResult {
+    script: string;
+    takes: TakeResult[];
 }

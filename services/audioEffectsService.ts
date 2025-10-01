@@ -209,8 +209,7 @@ export async function applyEffect(
 export async function mixAudio(
     voiceBlob: Blob,
     backgroundTrack?: { blob: Blob; volume: number },
-    sfxToApply?: { blob: Blob; volume: number; timing: 'start' | 'middle' | 'end' }[],
-    vocalDropsToApply?: { blob: Blob; volume: number; timing: 'start' | 'middle' | 'end' }[]
+    sfxToApply?: { blob: Blob; volume: number; timing: 'start' | 'middle' | 'end' }[]
 ): Promise<Blob> {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     
@@ -276,40 +275,6 @@ export async function mixAudio(
                 sfxSource.start(Math.max(0, startTime));
              } catch (e) {
                  console.error(`Could not process SFX:`, e);
-             }
-        }
-    }
-
-     // Vocal Drop sources
-    if (vocalDropsToApply) {
-        for (const drop of vocalDropsToApply) {
-             try {
-                const dropBuffer = await audioContext.decodeAudioData(await drop.blob.arrayBuffer());
-                const dropSource = offlineContext.createBufferSource();
-                dropSource.buffer = dropBuffer;
-                
-                const dropGain = offlineContext.createGain();
-                dropGain.gain.value = drop.volume;
-                
-                dropSource.connect(dropGain);
-                dropGain.connect(offlineContext.destination);
-                
-                let startTime = 0;
-                switch (drop.timing) {
-                    case 'start':
-                        startTime = 0;
-                        break;
-                    case 'middle':
-                        startTime = (voiceBuffer.duration / 2) - (dropBuffer.duration / 2);
-                        break;
-                    case 'end':
-                        startTime = voiceBuffer.duration - dropBuffer.duration;
-                        break;
-                }
-                // Ensure start time is not negative
-                dropSource.start(Math.max(0, startTime));
-             } catch (e) {
-                 console.error(`Could not process Vocal Drop:`, e);
              }
         }
     }
